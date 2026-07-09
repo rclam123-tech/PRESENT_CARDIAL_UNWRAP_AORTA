@@ -1,0 +1,19 @@
+# Core (required for the full phantom-validated pipeline, Phases 0-5)
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+
+# Real-data I/O (NIfTI CT + NRRD segmentation/mask)
+nibabel>=5.0
+pynrrd>=1.0
+
+# Real-data centerline extraction (SegmentationCenterline: EDT min-cost path)
+scikit-image>=0.22    # distance-transform min-cost path (skimage.graph)
+
+# Test runner
+pytest>=7.0
+
+# OPTIONAL -- only needed if Architecture B (mesh parameterization, Phase 3b) is
+# ever built. Not used by the curvature-corrected Architecture A pipeline.
+#   libigl               # authalic/ARAP parameterization (needs a C++ toolchain
+#                        # to build from source on Windows/py311)

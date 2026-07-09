@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aortic-unwrap"
+version = "0.1.0"
+description = "Display-only 2D unwrap of an already-scored aortic calcium mask"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "nibabel>=5.0",
+    "pynrrd>=1.0",
+    "scikit-image>=0.22",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+# Architecture B (mesh parameterization, Phase 3b) -- not currently used.
+meshB = ["libigl"]
+
+[tool.setuptools]
+packages = ["aortic_unwrap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
