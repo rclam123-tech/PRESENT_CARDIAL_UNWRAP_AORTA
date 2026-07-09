@@ -6,7 +6,7 @@
 ![Status](https://img.shields.io/badge/status-research%20prototype-orange)
 ![License](https://img.shields.io/badge/license-see%20below-lightgrey)
 
-> The package lives in [`CARDIAL_PORCELIAN_AORTA/`](CARDIAL_PORCELIAN_AORTA/). This page is the project overview; that directory has the full technical README.
+> The package lives in [`CARDIAL_PORCELIAN_AORTA/`](CARDIAL_PORCELIAN_AORTA/) (my file; do not click or you will get error). This page is the project overview; that directory has the full technical README.
 
 ---
 
@@ -114,7 +114,7 @@ If third-party research data is used, add:
 ## License
 
 <!-- TODO: resolve ownership before choosing a license. -->
-_No license is set yet._ If this work was produced in a lab context, confirm ownership (you vs. the institution/PI) before adding one. Until a `LICENSE` file exists, all rights are reserved and the code cannot be reused by others.
+_No license is set yet._ Until a `LICENSE` file exists, all rights are reserved and the code cannot be reused by others.
 
 ## Status & scope
 
