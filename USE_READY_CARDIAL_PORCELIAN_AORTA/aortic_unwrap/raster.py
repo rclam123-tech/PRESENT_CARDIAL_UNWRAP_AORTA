@@ -27,6 +27,10 @@ class UnwrapRaster:
     s_map: np.ndarray        # (H, W) float
     theta_map: np.ndarray    # (H, W) float
     r_map: np.ndarray        # (H, W) float
+    # Boundary-gate split (all 0 when the result was ungated):
+    n_in_aorta: int = 0
+    n_excluded_gate_a: int = 0   # outside segmentation (mask/seg pairing error)
+    n_excluded_gate_b: int = 0   # inside seg but beyond the wall radius
 
     def pixel_centers(self):
         H, W = self.image.shape
@@ -53,9 +57,45 @@ class UnwrapRaster:
 
 
 def rasterize(unwrap_result, pixel: float = 0.7, pad: float = 2.0) -> UnwrapRaster:
-    """Rasterize an UnwrapResult into a 2D occupancy image + inverse map."""
+    """Rasterize an UnwrapResult into a 2D occupancy image + inverse map.
+
+    If the result carries a boundary gate (``in_aorta`` not None), points OUTSIDE
+    the aorta are skipped (never rasterized) and the split is reported. The gate
+    is purely subtractive: the input mask is NEVER modified and no point is
+    dropped silently. The two exclusion counts are kept separate on purpose --
+    gate (a) (outside the segmentation) signals a mask/segmentation PAIRING error
+    (wrong patient, unresampled seg, grid rounding), while gate (b) (inside the
+    seg but beyond the wall radius) is genuine out-of-wall scope; a single merged
+    count would make a mis-paired mask indistinguishable from normal rejection.
+    """
     res = unwrap_result
-    u, v = res.u, res.v
+    n_total = len(res.u)
+    if res.in_aorta is not None:
+        keep = np.asarray(res.in_aorta, bool)
+        in_seg = np.asarray(res.in_seg, bool) if res.in_seg is not None else keep
+        n_excl_a = int((~in_seg).sum())            # outside segmentation
+        n_excl_b = int((in_seg & ~keep).sum())     # inside seg, beyond wall
+        n_in = int(keep.sum())
+        print(f"{n_in} calcium voxels in-aorta, {n_total - n_in} excluded "
+              f"({n_excl_a} outside segmentation [gate a], "
+              f"{n_excl_b} beyond wall radius [gate b])")
+    else:
+        keep = np.ones(n_total, bool)
+        n_in, n_excl_a, n_excl_b = n_total, 0, 0
+
+    u = res.u[keep]
+    v = res.v[keep]
+    cl_index_in = res.cl_index[keep]
+    s_in, theta_in, r_in = res.s[keep], res.theta[keep], res.r[keep]
+
+    if n_in == 0:
+        # Nothing in-scope: return an empty raster rather than crashing on min().
+        return UnwrapRaster(
+            image=np.zeros((1, 1), bool), u_min=0.0, v_min=0.0, pixel=pixel,
+            cl_index=np.full((1, 1), -1, int), s_map=np.zeros((1, 1)),
+            theta_map=np.zeros((1, 1)), r_map=np.zeros((1, 1)),
+            n_in_aorta=0, n_excluded_gate_a=n_excl_a, n_excluded_gate_b=n_excl_b)
+
     u_min = float(u.min()) - pad
     v_min = float(v.min()) - pad
     W = int(np.ceil((u.max() + pad - u_min) / pixel)) + 1
@@ -73,14 +113,15 @@ def rasterize(unwrap_result, pixel: float = 0.7, pad: float = 2.0) -> UnwrapRast
         rr, cc = row[n], col[n]
         image[rr, cc] = True
         # Last writer wins is fine; representative point per pixel.
-        cl_index[rr, cc] = res.cl_index[n]
-        s_map[rr, cc] = res.s[n]
-        theta_map[rr, cc] = res.theta[n]
-        r_map[rr, cc] = res.r[n]
+        cl_index[rr, cc] = cl_index_in[n]
+        s_map[rr, cc] = s_in[n]
+        theta_map[rr, cc] = theta_in[n]
+        r_map[rr, cc] = r_in[n]
 
     return UnwrapRaster(image=image, u_min=u_min, v_min=v_min, pixel=pixel,
                         cl_index=cl_index, s_map=s_map, theta_map=theta_map,
-                        r_map=r_map)
+                        r_map=r_map, n_in_aorta=n_in,
+                        n_excluded_gate_a=n_excl_a, n_excluded_gate_b=n_excl_b)
 
 
 def back_project(raster: UnwrapRaster, unwrap) -> np.ndarray:

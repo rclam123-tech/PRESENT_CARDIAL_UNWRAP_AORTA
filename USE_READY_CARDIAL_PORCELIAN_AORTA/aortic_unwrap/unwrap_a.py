@@ -11,6 +11,16 @@ physical point:
 No surface mesh, no parameterization, no branch clipping. Most of an aorta is
 near-cylindrical and this handles it exactly; the open question the Phase 3 gate
 answers with data is whether it survives the arch.
+
+Optional aorta boundary gate (Phase 7)
+--------------------------------------
+When an ``aorta_mask`` (+ its own RAS affine) is supplied, vertex assignment uses
+the wrap-aware ``Centerline.assign`` instead of plain ``nearest`` (so the arch's
+antiparallel-limb ambiguity is resolved by the radial offset), and each point is
+tagged ``in_aorta``. A point is in-scope iff it is BOTH inside the segmentation
+(gate a) AND within ``boundary_factor * wall_radius`` of a centerline vertex
+(gate b). With no mask the behaviour is byte-identical to before (``nearest``,
+``in_aorta=None``) -- so the Phase 3 gate/tests are unchanged.
 """
 
 from __future__ import annotations
@@ -27,17 +37,60 @@ class UnwrapResult:
     s: np.ndarray          # arclength (mm)
     theta: np.ndarray      # circumferential angle (rad), in the RMF
     r: np.ndarray          # radial distance from centerline (mm)
-    cl_index: np.ndarray   # nearest centerline vertex index
+    cl_index: np.ndarray   # chosen centerline vertex index
+    # Boundary gate (None when no aorta_mask was supplied -> ungated):
+    in_aorta: np.ndarray | None = None   # gate(a) AND gate(b): in-scope point
+    in_seg: np.ndarray | None = None     # gate(a) alone: inside the segmentation
 
 
 class CenterlineProjectionUnwrap:
-    def __init__(self, centerline):
+    def __init__(self, centerline, aorta_mask=None, aorta_affine_ras=None,
+                 boundary_factor: float = 1.15):
+        """``boundary_factor`` is the per-point inclusion tolerance for gate (b):
+        a point is kept iff its radial offset ``r <= boundary_factor *
+        wall_radius[vertex]``. This is NOT repo A's ``radial_extent`` (a MIP
+        sampling SPAN); it is an inclusion tolerance on an individual point. The
+        default 1.15 admits ~1-2 voxels of segmentation-boundary uncertainty
+        (~0.8-1.6 mm at 0.793 mm in-plane spacing) beyond the ray-cast wall
+        radius, so a plaque bulging at the adventitial edge is not clipped by a
+        tightly-drawn mask, while calcium a full radius outside the wall
+        (coronary / mitral-annular / vertebral) is still rejected.
+        """
         self.cl = centerline
+        self.aorta_mask = (None if aorta_mask is None
+                           else np.asarray(aorta_mask).astype(bool))
+        self.aorta_affine_ras = (None if aorta_affine_ras is None
+                                 else np.asarray(aorta_affine_ras, float))
+        self.boundary_factor = float(boundary_factor)
+
+    def _inside_seg(self, pts):
+        """Gate (a): points inside the aorta segmentation, seg-affine NN."""
+        from .geometry import physical_to_voxel
+        idx = np.rint(physical_to_voxel(pts, self.aorta_affine_ras)).astype(int)
+        shape = np.array(self.aorta_mask.shape)
+        ok = np.all((idx >= 0) & (idx < shape), axis=1)
+        inside = np.zeros(len(pts), bool)
+        g = idx[ok]
+        inside[ok] = self.aorta_mask[g[:, 0], g[:, 1], g[:, 2]]
+        return inside
 
     def __call__(self, points) -> UnwrapResult:
         cl = self.cl
         pts = np.atleast_2d(np.asarray(points, float))
-        k = cl.nearest(pts)
+
+        if self.aorta_mask is not None:
+            wall_radius = cl.wall_radius(self.aorta_mask, self.aorta_affine_ras)
+            k, _, _ = cl.assign(pts, wall_radius, factor=self.boundary_factor)
+            in_wall = k >= 0                     # gate (b): assign found a vertex
+            # Rejected points keep their nearest vertex only for coordinate
+            # bookkeeping; they are flagged out-of-aorta via in_aorta.
+            k = np.where(in_wall, k, cl.nearest(pts))
+            in_seg = self._inside_seg(pts)       # gate (a)
+            in_aorta = in_seg & in_wall
+        else:
+            k = cl.nearest(pts)
+            in_seg = in_aorta = None
+
         base = cl.points[k]
         T = cl.T[k]
         N1 = cl.N1[k]
@@ -49,7 +102,8 @@ class CenterlineProjectionUnwrap:
         r = np.hypot(a, b)
         theta = np.arctan2(b, a)
         s = cl.s[k] + along
-        return UnwrapResult(u=s, v=theta * r, s=s, theta=theta, r=r, cl_index=k)
+        return UnwrapResult(u=s, v=theta * r, s=s, theta=theta, r=r, cl_index=k,
+                            in_aorta=in_aorta, in_seg=in_seg)
 
     def inverse(self, s, theta, r) -> np.ndarray:
         """Map unwrap coordinates back to physical 3D points.
@@ -100,4 +154,4 @@ class CurvatureCorrectedUnwrap(CenterlineProjectionUnwrap):
              - kappa * res.r ** 2
              * (np.sin(res.theta - theta_inner) + np.sin(theta_inner)))
         return UnwrapResult(u=res.s, v=v, s=res.s, theta=res.theta, r=res.r,
-                            cl_index=k)
+                            cl_index=k, in_aorta=res.in_aorta, in_seg=res.in_seg)
