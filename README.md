@@ -1,5 +1,16 @@
 # Aortic Calcium Unwrap
 
+> **⚠ TODO — public-repo housekeeping (surfaced on purpose, not buried):**
+>
+> - **License is unresolved.** There is no `LICENSE` file, and the note near the
+>   bottom of this README says "all rights are reserved and the code cannot be
+>   reused by others" — the default for an unlicensed public repo. A license still
+>   needs to be chosen; that decision is deliberately **not** made here.
+> - **Data provenance is undocumented.** How the CT / aorta segmentation / calcium
+>   masks were produced, de-identified, and what (if anything) may be redistributed
+>   is not written down. Fill in a data-provenance section before pointing anyone at
+>   real inputs.
+
 **A display-only pipeline that flattens an already-scored aortic calcium mask onto a 2D map of the vessel wall, for lesion localization — without ever touching the calcium score.**
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+desktop.ini
+gen/
+testdata/
+*.nrrd
+*.nii
+*.nii.gz
+outputs/phase6c/
+outputs/pt011_*
