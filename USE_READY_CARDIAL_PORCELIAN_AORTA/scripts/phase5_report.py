@@ -201,6 +201,35 @@ The centerline is the one pluggable dependency that, on real data, comes from
 SlicerVMTK Extract Centerline exported once as a VTK/CSV polyline; everything
 else runs in a plain venv.
 
+## Phase 7 aorta boundary gate — scope and what it does NOT remove
+
+The Phase 7 boundary gate (`Centerline.assign` plus `in_aorta` on the unwrap,
+with the split gate-a / gate-b counters reported by `rasterize`) bounds *which*
+calcium is projected. It removes calcium lying **outside the aorta segmentation**
+— coronary, mitral-annular, and vertebral calcium that falls outside the mask —
+and, like every other layer here, it never touches the score.
+
+**It does NOT remove bone fused to the segmentation edge.** A bone voxel captured
+by an over-inclusive segmentation boundary passes **both** gates: it is inside
+`aorta_mask` (gate a), **and** it sits at `r ≈ wall_radius`, i.e. right at the
+wall (gate b). Geometry cannot separate it from genuine wall calcium, and neither
+can HU — spine, ribs and sternum occupy the same HU range as calcium. Excluding
+it therefore remains a **manual-QC dependency** (overlay the mask on the CT and
+confirm no marked voxel sits on skeleton) and is **not fixed by Phase 7**.
+
+**The gate is validated on phantoms only.** The Phase 6b (PT011) and Phase 6c
+(cohort batch) studies — `phase6b_pt011.py` and `phase6c_batch.py`, which live in
+a separate tree pending merge — were **geometry-only**: they exercise the
+centerline extractor, the rotation-minimizing frame and the surface unwrap, but
+they **never construct a `CalciumHandoff`**. The projection and boundary-gate
+layer — `CenterlineProjectionUnwrap`, `rasterize`, `in_aorta` — has therefore
+**never run on patient data**. Every Phase 7 number comes from phantoms.
+
+**Outstanding:** end-to-end real-data validation — `the_runner.py` with
+`--aorta-seg` on PT011, reporting **both** gate counters (gate a = outside the
+segmentation, gate b = beyond the wall radius) — has not been run. That runner
+and its boundary-gate wiring are not yet committed to this repo.
+
 ## Summary error budget
 
 | regime | metric | result |
@@ -210,8 +239,10 @@ else runs in a plain venv.
 | phantom, curved tube — aneurysm-on-arch (κr≈0.36, worst case) | per-element area distortion | ~{aneur_cor:.0f}% — *same phenomenon*; remedy = Architecture B |
 | all phantoms | localization (s, θ) | < 0.1 mm |
 | all phantoms | round-trip point→2D→3D | ≤ ~1 voxel (radial-shell floor) |
+| phantom | Phase 7 aorta boundary gate | validated on **phantoms only** — bone at the mask edge still passes both gates |
 | real data | area | **not validated — no oracle exists** |
 | real data | round-trip + ostia landmark | consistency only |
+| real data | projection + boundary gate (`in_aorta`) | **never run on patient data** — Phase 6b/6c were geometry-only; end-to-end run outstanding |
 """
 
 
