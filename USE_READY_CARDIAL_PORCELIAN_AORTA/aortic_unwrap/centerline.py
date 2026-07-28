@@ -19,6 +19,7 @@ nearest-vertex queries. Everything downstream consumes only this interface.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -83,6 +84,93 @@ class Centerline:
         pts = np.atleast_2d(np.asarray(pts, float))
         _, idx = self._tree.query(pts)
         return idx
+
+    def wall_radius(self, seg, seg_affine_ras):
+        """Per-vertex wall radius (mm), ray-cast from the segmentation once.
+
+        Cached on the instance: the wrap-aware ``assign`` needs a per-vertex
+        "how wide is the wall here", and that should not depend on the caller
+        re-deriving it. Assumes one segmentation per centerline (the aorta seg
+        the centerline was built from); pass the same ``seg``/affine each call.
+        """
+        cached = getattr(self, "_wall_radius", None)
+        if cached is None:
+            from .wall import estimate_wall_radius
+            cached = estimate_wall_radius(seg, seg_affine_ras, self)
+            self._wall_radius = cached
+        return cached
+
+    def assign(self, pts, wall_radius, factor=1.15, k=5):
+        """Wrap-aware nearest-vertex assignment, bounded by the wall radius.
+
+        Plain nearest-vertex (``nearest``) is ambiguous where the vessel doubles
+        back on itself (the arch): for a point on the descending limb a vertex on
+        the *ascending* limb can be almost as close, and because the two limbs run
+        roughly ANTIPARALLEL there, the offset to that wrong vertex is almost
+        entirely RADIAL -- the along-tangent distance ``|(p-C).T|`` is small for
+        the wrong vertex too, so it cannot separate the limbs. The radial offset
+        can: the correct limb is the one whose wall actually reaches the point.
+
+        For each point, among its ``k`` nearest vertices, keep only candidates
+        whose radial offset ``r = hypot((p-C).N1, (p-C).N2)`` is within
+        ``factor * wall_radius[vertex]``, then pick the survivor minimizing
+        ``r / wall_radius[vertex]`` (tie-broken on ``|along|``). If no candidate's
+        wall reaches the point it is out-of-aorta -> vertex ``-1``.
+
+        Returns ``(vertex_index, r, along)`` per point so callers need not
+        recompute the projection. Where nothing survives, ``vertex_index`` is
+        ``-1`` and ``r``/``along`` are those of the nearest candidate (diagnostic
+        only -- the point is excluded downstream). Does NOT modify ``nearest``.
+        """
+        pts = np.atleast_2d(np.asarray(pts, float))
+        wall_radius = np.asarray(wall_radius, float)
+        n_pts = len(pts)
+        kq = int(min(k, len(self.points)))
+        _, cand = self._tree.query(pts, k=kq)
+        cand = cand.reshape(n_pts, kq)                       # (n_pts, kq) vertex ids
+
+        # Project each point onto each candidate vertex's frame.
+        C = self.points[cand]                                # (n_pts, kq, 3)
+        d = pts[:, None, :] - C
+        along = np.sum(d * self.T[cand], axis=2)             # (n_pts, kq)
+        a = np.sum(d * self.N1[cand], axis=2)
+        b = np.sum(d * self.N2[cand], axis=2)
+        r = np.hypot(a, b)                                   # (n_pts, kq)
+
+        wr = wall_radius[cand]                               # (n_pts, kq)
+        within = r <= factor * wr                            # survivors
+        # Minimize r / wall_radius; tie-break toward smaller |along|. Rejected
+        # candidates get +inf so they are never selected.
+        ratio = np.where(within, r / wr, np.inf)
+        key = ratio + 1e-9 * np.abs(along)                   # |along| tiebreak
+        best = np.argmin(key, axis=1)                        # (n_pts,)
+        rows = np.arange(n_pts)
+
+        vtx = cand[rows, best]
+        r_out = r[rows, best]
+        along_out = along[rows, best]
+        vtx = np.where(within[rows, best], vtx, -1)
+
+        # Warn (never raise) if sub-vertex refinement is extrapolating: the
+        # along-tangent shift should stay within the local vertex spacing.
+        n_v = len(self.points)
+        spacing = np.full(n_v, np.inf)
+        seg_len = np.diff(self.s)
+        if len(seg_len):
+            spacing[:-1] = seg_len
+            spacing[-1] = seg_len[-1]
+            if n_v > 2:
+                spacing[1:-1] = np.maximum(seg_len[:-1], seg_len[1:])
+        valid = vtx >= 0
+        extrap = valid & (np.abs(along_out) > spacing[np.where(valid, vtx, 0)])
+        if np.any(extrap):
+            warnings.warn(
+                f"assign: |along| exceeds local vertex spacing for "
+                f"{int(extrap.sum())} point(s); sub-vertex refinement is "
+                f"extrapolating (centerline may be too coarse here).",
+                stacklevel=2,
+            )
+        return vtx, r_out, along_out
 
     def point_at(self, s) -> np.ndarray:
         """Linearly interpolate a physical point at arclength ``s``."""

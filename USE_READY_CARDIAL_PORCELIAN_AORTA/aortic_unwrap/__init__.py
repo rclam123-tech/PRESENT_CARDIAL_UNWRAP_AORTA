@@ -21,6 +21,7 @@ from .centerline import (
     SegmentationCenterline,
 )
 from .frame import accumulated_twist, rotation_minimizing_frame
+from .wall import estimate_wall_radius
 from .mask_io import CalciumHandoff, calcium_points, load_calcium_from_files
 from .unwrap_a import (
     CenterlineProjectionUnwrap,
@@ -33,7 +34,8 @@ __all__ = [
     "make_affine", "voxel_to_physical", "physical_to_voxel", "to_ras",
     "affine_to_ras", "Centerline", "AnalyticCenterline", "PolylineFileCenterline",
     "SegmentationCenterline",
-    "rotation_minimizing_frame", "accumulated_twist", "calcium_points",
+    "rotation_minimizing_frame", "accumulated_twist", "estimate_wall_radius",
+    "calcium_points",
     "CalciumHandoff", "load_calcium_from_files", "CenterlineProjectionUnwrap",
     "CurvatureCorrectedUnwrap", "UnwrapResult", "rasterize", "back_project",
     "UnwrapRaster",

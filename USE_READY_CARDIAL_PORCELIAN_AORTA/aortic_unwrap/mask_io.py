@@ -39,10 +39,17 @@ class CalciumHandoff:
     shape: tuple
     spacing: np.ndarray
     n_scored: int
+    # Optional aorta segmentation for the boundary gate, kept on its OWN grid
+    # (NOT forced onto the CT grid) so it can be looked up in physical RAS,
+    # nearest-neighbour. None -> the downstream unwrap falls back to a
+    # radial-only gate and says so out loud.
+    aorta_mask: np.ndarray | None = None
+    aorta_affine_ras: np.ndarray | None = None
 
 
 def calcium_points(calcium_mask, affine, system: str = "RAS",
-                   ct_shape=None) -> CalciumHandoff:
+                   ct_shape=None, aorta_mask=None,
+                   aorta_affine_ras=None) -> CalciumHandoff:
     """Convert a scored binary mask to physical RAS points.
 
     Parameters
@@ -55,6 +62,10 @@ def calcium_points(calcium_mask, affine, system: str = "RAS",
         World convention of ``affine`` (NIfTI -> RAS, NRRD/ITK -> LPS).
     ct_shape : optional tuple
         If given, asserts the mask grid matches the CT grid (co-registration).
+    aorta_mask, aorta_affine_ras : optional
+        Aorta segmentation for the boundary gate, on its OWN grid with an
+        already-RAS affine. Carried through unchanged; NOT forced onto the CT
+        grid and NOT co-registration-checked (it is looked up in physical RAS).
     """
     mask = np.asarray(calcium_mask)
     if mask.ndim != 3:
@@ -74,6 +85,10 @@ def calcium_points(calcium_mask, affine, system: str = "RAS",
         shape=tuple(mask.shape),
         spacing=voxel_spacing(affine_ras),
         n_scored=len(idx),
+        aorta_mask=(None if aorta_mask is None
+                    else np.asarray(aorta_mask).astype(bool)),
+        aorta_affine_ras=(None if aorta_affine_ras is None
+                          else np.asarray(aorta_affine_ras, float)),
     )
 
 
@@ -117,10 +132,17 @@ def load_nrrd(path):
     return data, affine, system
 
 
-def load_calcium_from_files(calcium_path, ct_path) -> CalciumHandoff:
+def load_calcium_from_files(calcium_path, ct_path,
+                            aorta_seg=None) -> CalciumHandoff:
     """Convenience real-data path: read CT + calcium mask, return the handoff.
 
     Picks the loader by extension (.nii/.nii.gz -> NIfTI, .nrrd -> NRRD).
+
+    ``aorta_seg`` (optional) is read the same way and carried on the handoff for
+    the boundary gate. It is kept on its OWN affine (canonicalized to RAS) and is
+    NOT forced onto the CT grid -- the gate looks it up in physical RAS,
+    nearest-neighbour (order=0, never linear on a label). If omitted, downstream
+    falls back to the radial-only gate.
     """
     def _load(p):
         p = Path(p)
@@ -133,4 +155,13 @@ def load_calcium_from_files(calcium_path, ct_path) -> CalciumHandoff:
 
     ct, ct_affine, _ = _load(ct_path)
     mask, mask_affine, mask_system = _load(calcium_path)
-    return calcium_points(mask, mask_affine, system=mask_system, ct_shape=ct.shape)
+
+    aorta_mask = aorta_affine_ras = None
+    if aorta_seg is not None:
+        aseg, aseg_affine, aseg_system = _load(aorta_seg)
+        aorta_mask = np.asarray(aseg) > 0
+        aorta_affine_ras = affine_to_ras(aseg_affine, aseg_system)
+
+    return calcium_points(mask, mask_affine, system=mask_system,
+                          ct_shape=ct.shape, aorta_mask=aorta_mask,
+                          aorta_affine_ras=aorta_affine_ras)
