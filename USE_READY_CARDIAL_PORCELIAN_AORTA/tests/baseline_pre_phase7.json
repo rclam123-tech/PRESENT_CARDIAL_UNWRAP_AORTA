@@ -1,0 +1,41 @@
+{
+  "_note": "Pinned from pristine Repo B code before Phase 7. Values are curvature-corrected-unwrap localization + raw/corrected area distortion per phantom. Phase 7 must reproduce these.",
+  "phantoms": {
+    "straight_cylinder": {
+      "area_raw_median_abs_pct": 0.0016666861148761924,
+      "area_corrected_median_abs_pct": 0.0016666861148761924,
+      "area_corrected_median_factor": 1.0000166668611488,
+      "loc_median_ds_mm": 0.01772151898735075,
+      "loc_max_ds_mm": 0.18987341772151467,
+      "loc_median_dcirc_mm": 0.03978002050740459,
+      "loc_max_dcirc_mm": 0.23139685212116695
+    },
+    "bent_tube": {
+      "area_raw_median_abs_pct": 17.475760709823508,
+      "area_corrected_median_abs_pct": 3.8593950057078774,
+      "area_corrected_median_factor": 0.9622244080921722,
+      "loc_median_ds_mm": 0.06367713344728543,
+      "loc_max_ds_mm": 0.3239183310316349,
+      "loc_median_dcirc_mm": 0.03169134192089423,
+      "loc_max_dcirc_mm": 0.4845854561051344
+    },
+    "tapered_tube": {
+      "area_raw_median_abs_pct": 0.16804205022759033,
+      "area_corrected_median_abs_pct": 0.16804205022759033,
+      "area_corrected_median_factor": 0.9983195794977241,
+      "loc_median_ds_mm": 0.029418114022163877,
+      "loc_max_ds_mm": 0.3999999999999915,
+      "loc_median_dcirc_mm": 0.03246264888320133,
+      "loc_max_dcirc_mm": 0.2445645581365266
+    },
+    "bent_aneurysm": {
+      "area_raw_median_abs_pct": 41.08978644632395,
+      "area_corrected_median_abs_pct": 10.338939574035798,
+      "area_corrected_median_factor": 0.913688345106834,
+      "loc_median_ds_mm": 0.08495553654847754,
+      "loc_max_ds_mm": 0.41096283249292753,
+      "loc_median_dcirc_mm": 0.038058115933123235,
+      "loc_max_dcirc_mm": 0.25538306995630533
+    }
+  }
+}

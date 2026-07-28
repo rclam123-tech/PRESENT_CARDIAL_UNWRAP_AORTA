@@ -329,3 +329,81 @@ ALL_PHANTOMS = {
 
 def build_all():
     return {name: fn() for name, fn in ALL_PHANTOMS.items()}
+
+
+# --------------------------------------------------------------------------- #
+# Phase 7 fixtures (aorta boundary gate). Deliberately NOT in ALL_PHANTOMS so
+# the Phase 0-6a gates are untouched.
+# --------------------------------------------------------------------------- #
+def out_of_aorta_blob(ph, along_frac: float = 0.5, out_factor: float = 1.3,
+                      half: int = 1):
+    """Physical RAS points of a small calcium blob placed OUTSIDE ``ph.aorta_mask``.
+
+    Positioned ``out_factor`` * (local wall radius) off the centerline along N2 at
+    ``along_frac`` of the length -- a coronary/vertebral-style distractor that a
+    naive nearest-vertex projection would still paint onto the aortic map. Returns
+    ``(pts_ras, idx)``; every returned voxel is verified OUTSIDE the aorta mask,
+    and the function RAISES if the placement lands inside or off-grid, so the
+    fixture can never silently degrade into a no-op.
+    """
+    from .geometry import physical_to_voxel, voxel_to_physical
+    cl = ph.centerline
+    i = int(np.clip(round(along_frac * (len(cl.points) - 1)), 0,
+                    len(cl.points) - 1))
+    R = float(np.asarray(ph.radius_fn(cl.s[i])))
+    center = cl.points[i] + out_factor * R * cl.N2[i]
+    cidx = np.rint(physical_to_voxel(center, ph.affine)).astype(int).ravel()
+    offs = np.arange(-half, half + 1)
+    ii, jj, kk = np.meshgrid(offs, offs, offs, indexing="ij")
+    idx = cidx[None, :] + np.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
+    shape = np.array(ph.shape)
+    on_grid = np.all((idx >= 0) & (idx < shape), axis=1)
+    idx = idx[on_grid]
+    if len(idx):
+        inside = ph.aorta_mask[idx[:, 0], idx[:, 1], idx[:, 2]]
+        idx = idx[~inside]
+    if len(idx) == 0:
+        raise ValueError("out_of_aorta_blob landed inside the mask or off-grid; "
+                         "adjust out_factor / along_frac")
+    return voxel_to_physical(idx, ph.affine), idx
+
+
+def arch_hairpin(sep: float = 9.0, Lz: float = 60.0, R_thick: float = 12.0,
+                 R_thin: float = 4.0, n: int = 600):
+    """Asymmetric-radius hairpin centerline for the wrong-limb arch test.
+
+    Two antiparallel straight limbs at x = +/-sep joined by a semicircle: a THICK
+    limb (radius ``R_thick``, arclength [0, Lz]) and a THIN limb (radius
+    ``R_thin``, arclength [Lz+pi*sep, L]). The limbs are close but their lumens do
+    NOT overlap. A point inside the thick wall but nudged toward the thin limb is
+    Euclidean-nearest to a thin-limb centerline vertex (so ``nearest`` mis-maps it
+    to the thin limb's arclength), yet its radial offset exceeds
+    ``factor * R_thin`` so ``assign`` refuses it (returns -1) rather than painting
+    it onto the wrong limb.
+
+    Returns ``(centerline, wall_radius, meta)`` where ``wall_radius`` is the
+    per-vertex analytic radius (thick -> thin) to feed ``Centerline.assign``.
+    """
+    LB = np.pi * sep
+    L = 2 * Lz + LB
+
+    def f(s):
+        s = float(s)
+        if s <= Lz:                       # limb 1 (thick), x=+sep, z: 0 -> Lz
+            return np.array([sep, 0.0, s])
+        if s <= Lz + LB:                  # semicircle cap, center (0, 0, Lz)
+            ang = (s - Lz) / sep
+            return np.array([sep * np.cos(ang), 0.0, Lz + sep * np.sin(ang)])
+        return np.array([-sep, 0.0, Lz - (s - Lz - LB)])  # limb 2 (thin), x=-sep
+
+    cl = AnalyticCenterline.from_function(f, t_max=L, n=n)
+    s = cl.s
+    wall = np.empty_like(s)
+    wall[s <= Lz] = R_thick
+    wall[s >= Lz + LB] = R_thin
+    mid = (s > Lz) & (s < Lz + LB)
+    wall[mid] = R_thick + (R_thin - R_thick) * (s[mid] - Lz) / LB
+    meta = {"sep": sep, "Lz": Lz, "LB": LB, "length": L,
+            "R_thick": R_thick, "R_thin": R_thin,
+            "thick_s_hi": Lz, "thin_s_lo": Lz + LB}
+    return cl, wall, meta

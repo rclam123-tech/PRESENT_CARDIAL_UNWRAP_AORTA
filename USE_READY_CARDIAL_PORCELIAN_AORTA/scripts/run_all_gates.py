@@ -16,6 +16,7 @@ GATES = [
     ("Phase 3  unwrap decision", "phase3_gate.py"),
     ("Phase 4  raster + inverse", "phase4_gate.py"),
     ("Phase 5  acceptance report", "phase5_report.py"),
+    ("Phase 7  aorta boundary gate", "phase7_gate.py"),
 ]
 
 
